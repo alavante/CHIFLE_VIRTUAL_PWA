@@ -1,94 +1,18 @@
-// SW pack sin conexión · módulo CHIFLE_VIRTUAL_PWA
-const VERSION = 'v1';
-const PREFIX = 'pack-CHIFLE_VIRTUAL_PWA-';
-const CACHE = PREFIX + VERSION;
-const CACHE_USO = 'uso-audio-v1'; // compartido: lo ya reproducido se queda guardado
-const LOCAL = [
- "./",
- "./index.html",
- "./badge_1_chifle.png",
- "./img/BANDAMUSICA.jpg",
- "./img/BANDERAS.jpg",
- "./img/CHFLE.jpg",
- "./img/GDIA.jpg",
- "./img/JCIr.jpg",
- "./img/PARADAMILITAR02.jpg",
- "./img/TEAR.jpg",
- "./img/banderaespana.jpg",
- "./img/check_BLANCOjpg.jpg",
- "./img/check_GRISjpg.jpg",
- "./img/check_it.jpg",
- "./img/check_it_GRIS.jpg",
- "./img/cornetas.jpg",
- "./img/fondoazul.jpg",
- "./audio/ComteoAlmte.mp3",
- "./audio/JSE_Baldeo.mp3",
- "./audio/JSE_MANIOBRA_GENERAL.mp3",
- "./audio/JSE_baupres.mp3",
- "./audio/JSE_braceo.mp3",
- "./audio/JSE_braceo_vergas_simultaneo_a_ER.mp3",
- "./audio/JSE_braceo_vergas_simultaneo_a_br.mp3",
- "./audio/JSE_contramaestre.mp3",
- "./audio/JSE_dentro_y_abajo.mp3",
- "./audio/JSE_descubierta.mp3",
- "./audio/JSE_descubierta_gaviero_listo.mp3",
- "./audio/JSE_gaviero.mp3",
- "./audio/JSE_gavieros_arriba.mp3",
- "./audio/JSE_gavieros_fuera.mp3",
- "./audio/JSE_juanete.mp3",
- "./audio/JSE_llamada_a_la_guardia_de_cubierta.mp3",
- "./audio/JSE_mayor_popel.mp3",
- "./audio/JSE_mayor_proel.mp3",
- "./audio/JSE_mesana.mp3",
- "./audio/JSE_trinquete.mp3",
- "./audio/JSE_velacho_alto.mp3",
- "./audio/JSE_velacho_bajo.mp3",
- "./audio/JSE_verga_trinquete.mp3",
- "./audio/MAN_entrar.mp3",
- "./audio/MAN_forte.mp3",
- "./audio/MAN_largar.mp3",
- "./audio/RAS_listo_y_a_cubierto.mp3",
- "./audio/RAS_pasada_la_maniobra.mp3",
- "./audio/RAS_voy_a_lanzar_guias.mp3",
- "./audio/oficiales.mp3",
- "./audio/retiradaComteoAlmte.mp3"
-];
-const REMOTE = [];
-
-self.addEventListener('install', (e) => {
-  e.waitUntil((async () => {
-    const c = await caches.open(CACHE);
-    const todo = [...LOCAL, ...REMOTE];
-    for (let i = 0; i < todo.length; i += 6) {
-      await Promise.all(todo.slice(i, i + 6).map(async (u) => {
-        const req = new Request(u);
-        if (await c.match(req, { ignoreVary: true })) return;
-        const r = await fetch(new Request(u, { cache: 'reload' }));
-        if (!r.ok) throw new Error(u + ' ' + r.status);
-        await c.put(req, r);
-      }));
-    }
-    await self.skipWaiting();
-  })());
-});
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k)));
-    await self.clients.claim();
-  })());
-});
-
+// SW módulo CHIFLE_VIRTUAL_PWA · uso sin conexión (la descarga la gestiona Mesana)
+const CACHE = 'pack-CHIFLE_VIRTUAL_PWA-v1';
+const CACHE_USO = 'uso-audio-v1';
 const TIPOS = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4' };
 
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
 async function rango(req, res, url) {
-  const ext = (new URL(url).pathname.split('.').pop() || '').toLowerCase();
-  let tipo = res.headers.get('Content-Type') || '';
-  if (!tipo || tipo.indexOf('octet-stream') >= 0) tipo = TIPOS[ext] || 'audio/mpeg';
   const h = req.headers.get('range');
   const m = h && /bytes=(\d*)-(\d*)/.exec(h);
   if (!m) return res;
+  const ext = (new URL(url).pathname.split('.').pop() || '').toLowerCase();
+  let tipo = res.headers.get('Content-Type') || '';
+  if (!tipo || tipo.indexOf('octet-stream') >= 0) tipo = TIPOS[ext] || 'audio/mpeg';
   const buf = await res.clone().arrayBuffer();
   const len = buf.byteLength;
   let s, f;
@@ -118,15 +42,18 @@ async function audio(req) {
   return rango(req, hit, url);
 }
 
-async function swr(e) {
+async function pagina(e) {
   const req = e.request;
-  const c = await caches.open(CACHE);
-  const hit = await c.match(req, { ignoreSearch: true, ignoreVary: true });
-  const red = fetch(req).then((r) => { if (r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
-  if (hit) { e.waitUntil(red); return hit; }
-  const r = await red;
-  if (r) return r;
-  return (await c.match('./', { ignoreSearch: true })) || Response.error();
+  const hit = await caches.match(req, { ignoreSearch: true, ignoreVary: true });
+  if (hit) {
+    e.waitUntil(fetch(req).then(async (r) => { if (r && r.ok) { const c = await caches.open(CACHE); await c.put(req, r); } }).catch(() => {}));
+    return hit;
+  }
+  try {
+    const r = await fetch(req);
+    if (r && r.ok) { const c = await caches.open(CACHE_USO); c.put(req, r.clone()); }
+    return r;
+  } catch (_) { return Response.error(); }
 }
 
 self.addEventListener('fetch', (e) => {
@@ -134,5 +61,5 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (/\.(mp3|wav|ogg|m4a)$/i.test(url.pathname)) { e.respondWith(audio(req)); return; }
-  if (url.origin === self.location.origin) { e.respondWith(swr(e)); }
+  if (url.origin === self.location.origin) e.respondWith(pagina(e));
 });
